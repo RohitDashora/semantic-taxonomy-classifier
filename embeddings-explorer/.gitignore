@@ -1,0 +1,20 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output (keep dist/ for deployment!)
+deploy/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Databricks
+.databricks/
+
+# OS
+.DS_Store

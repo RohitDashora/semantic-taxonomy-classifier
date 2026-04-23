@@ -1,0 +1,17 @@
+command: ['node', 'server.js']
+
+env:
+  - name: 'NODE_ENV'
+    value: 'production'
+
+  # Unity Catalog location for pipeline tables. Must match the catalog/schema
+  # used by the companion DAB pipeline (../youtube-channel-classification/).
+  - name: 'CATALOG'
+    value: 'main'
+  - name: 'SCHEMA'
+    value: 'youtube_channels'
+
+  # SQL Warehouse resource binding. Create a Databricks App resource of type
+  # "sql-warehouse" named 'sql-warehouse' and bind it to your target warehouse.
+  - name: 'DATABRICKS_WAREHOUSE_ID'
+    valueFrom: 'sql-warehouse'

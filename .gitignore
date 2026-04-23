@@ -1,0 +1,38 @@
+# Claude Code harness
+.claude/
+
+# Databricks CLI / bundle working directory
+.databricks/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build artifacts (kept locally, not committed)
+**/dist/
+**/deploy/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/*
+!**/.vscode/settings.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sample data — customers bring their own (kept out of repo for YouTube ToS cleanliness)
+youtube-channel-classification/data/channels_data_sample.csv

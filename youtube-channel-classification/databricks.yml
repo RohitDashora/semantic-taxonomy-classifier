@@ -1,0 +1,280 @@
+bundle:
+  name: youtube-channel-classification
+
+variables:
+  catalog:
+    description: "Unity Catalog name for all pipeline tables"
+    default: main
+  schema:
+    description: "Schema name within the catalog"
+    default: youtube_channels
+  run_mode:
+    description: "Run mode: dev (sample data) or prod (full scale)"
+    default: dev
+  videos_per_channel:
+    description: "Videos to fetch per channel for enrichment (1-50)"
+    default: "2"
+
+targets:
+  # Deploy with: databricks bundle deploy -t dev -p <your-profile>
+  # The CLI profile (via -p or DATABRICKS_CONFIG_PROFILE env var) provides
+  # workspace host + auth. No profile/host is baked into this file.
+  dev:
+    default: true
+    mode: development
+    variables:
+      catalog: main
+      schema: youtube_channels
+      run_mode: dev
+
+  # Deploy with: databricks bundle deploy -t prod -p <your-prod-profile>
+  prod:
+    mode: production
+    variables:
+      catalog: main
+      schema: youtube_channels
+      run_mode: prod
+
+resources:
+  jobs:
+    # ──────────────────────────────────────────────
+    # Job 1 (v2): Load 0 Classification (no YouTube API needed)
+    # Multi-embedding weighted scoring against IAB taxonomy.
+    # ──────────────────────────────────────────────
+    classify-channels-v2:
+      name: "yt-classify-v2-${bundle.target}"
+      tags:
+        managed-by: "databricks-asset-bundles"
+        bundle: "youtube-channel-classification"
+        pipeline-version: "v2"
+      tasks:
+        - task_key: "download-taxonomy"
+          notebook_task:
+            notebook_path: ./src/taxonomy/00_download_taxonomy.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "prepare-taxonomy"
+          depends_on:
+            - task_key: "download-taxonomy"
+          notebook_task:
+            notebook_path: ./src/taxonomy/01_prepare_taxonomy.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "data-prep"
+          depends_on:
+            - task_key: "prepare-taxonomy"
+          notebook_task:
+            notebook_path: ./src/classify/01_data_prep.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "embeddings-v2"
+          depends_on:
+            - task_key: "data-prep"
+          notebook_task:
+            notebook_path: ./src/classify/02_embeddings_v2.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "classify-l0"
+          depends_on:
+            - task_key: "embeddings-v2"
+          notebook_task:
+            notebook_path: ./src/classify/03_classify_l0.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "output"
+          depends_on:
+            - task_key: "classify-l0"
+          notebook_task:
+            notebook_path: ./src/classify/04_output.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+    # ──────────────────────────────────────────────
+    # Job 2 (v2): Enrich + Load 0 + Load 1 (KNN refinement)
+    # Full pipeline: video enrichment → multi-embedding → L0 → KNN pool → L1.
+    # Requires YouTube API key.
+    # ──────────────────────────────────────────────
+    enrich-and-classify-v2:
+      name: "yt-enrich-classify-v2-${bundle.target}"
+      tags:
+        managed-by: "databricks-asset-bundles"
+        bundle: "youtube-channel-classification"
+        pipeline-version: "v2"
+      tasks:
+        # --- Enrichment phase ---
+        - task_key: "fetch-videos"
+          notebook_task:
+            notebook_path: ./src/enrich/01_fetch_video_metadata.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+              videos_per_channel: ${var.videos_per_channel}
+
+        - task_key: "aggregate-to-channel"
+          depends_on:
+            - task_key: "fetch-videos"
+          notebook_task:
+            notebook_path: ./src/enrich/02_aggregate_to_channel.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "merge-enriched"
+          depends_on:
+            - task_key: "aggregate-to-channel"
+          notebook_task:
+            notebook_path: ./src/enrich/03_merge_enriched.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        # --- Taxonomy (parallel with enrichment) ---
+        - task_key: "download-taxonomy"
+          notebook_task:
+            notebook_path: ./src/taxonomy/00_download_taxonomy.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "prepare-taxonomy"
+          depends_on:
+            - task_key: "download-taxonomy"
+            - task_key: "merge-enriched"
+          notebook_task:
+            notebook_path: ./src/taxonomy/01_prepare_taxonomy.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        # --- Classification phase (Load 0 → KNN pool → Load 1) ---
+        - task_key: "data-prep"
+          depends_on:
+            - task_key: "prepare-taxonomy"
+          notebook_task:
+            notebook_path: ./src/classify/01_data_prep.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+              data_source_override: ${var.catalog}.${var.schema}.channels_enriched_combined
+
+        - task_key: "embeddings-v2"
+          depends_on:
+            - task_key: "data-prep"
+          notebook_task:
+            notebook_path: ./src/classify/02_embeddings_v2.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "classify-l0"
+          depends_on:
+            - task_key: "embeddings-v2"
+          notebook_task:
+            notebook_path: ./src/classify/03_classify_l0.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "build-knn-pool"
+          depends_on:
+            - task_key: "classify-l0"
+          notebook_task:
+            notebook_path: ./src/classify/03b_knn_pool.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "classify-l1"
+          depends_on:
+            - task_key: "build-knn-pool"
+          notebook_task:
+            notebook_path: ./src/classify/03c_classify_l1.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+        - task_key: "output"
+          depends_on:
+            - task_key: "classify-l1"
+          notebook_task:
+            notebook_path: ./src/classify/04_output.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+    # ──────────────────────────────────────────────
+    # Legacy jobs (v1) — kept for reference/rollback
+    # ──────────────────────────────────────────────
+    # classify-channels:
+    #   name: "yt-classify-channels-${bundle.target}"
+    #   ... (original v1 job — use classify-channels-v2 instead)
+
+    # enrich-and-classify:
+    #   name: "yt-enrich-and-classify-${bundle.target}"
+    #   ... (original v1 job — use enrich-and-classify-v2 instead)
+
+    # ──────────────────────────────────────────────
+    # Job 3: Pre-compute visualization data for the Embeddings Explorer app
+    # Produces iab_viz_precomputed, channels_viz_sample, viz_dendrogram_linkage.
+    # Required before deploying the companion Databricks App.
+    # Run after classify-channels-v2 (or enrich-and-classify-v2) completes.
+    # ──────────────────────────────────────────────
+    precompute-viz:
+      name: "yt-precompute-viz-${bundle.target}"
+      tags:
+        managed-by: "databricks-asset-bundles"
+        bundle: "youtube-channel-classification"
+      tasks:
+        - task_key: "precompute-viz"
+          notebook_task:
+            notebook_path: ./src/explore/02_precompute_viz_data.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
+
+    # ──────────────────────────────────────────────
+    # Job 4: Kids classifier (independent, optional)
+    # Adds probability_kids column. Run after classification.
+    # ──────────────────────────────────────────────
+    kids-classifier:
+      name: "yt-kids-classifier-${bundle.target}"
+      tags:
+        managed-by: "databricks-asset-bundles"
+        bundle: "youtube-channel-classification"
+      tasks:
+        - task_key: "kids-classify"
+          notebook_task:
+            notebook_path: ./src/kids/01_kids_classifier.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              run_mode: ${var.run_mode}
