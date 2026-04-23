@@ -1,10 +1,8 @@
 # Databricks CLI / bundle working directory
 .databricks/
 
-# IDE (keep .vscode/settings.json — it configures Jupyter cell markers for
-# Databricks-style notebooks when viewed in VS Code)
-.vscode/*
-!.vscode/settings.json
+# IDE
+.vscode/
 .idea/
 *.swp
 
