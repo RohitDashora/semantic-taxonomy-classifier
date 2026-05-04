@@ -150,6 +150,8 @@ databricks apps get embeddings-explorer --profile <your-profile> -o json \
 
 Local dev is useful for UI iteration. You'll use a personal access token (PAT) instead of the App's OAuth.
 
+> We don't ship `package-lock.json` — `npm install` resolves against whatever registry your `.npmrc` points at (defaults to public npmjs.org). If you want fully reproducible installs, generate a lockfile locally and don't commit it.
+
 ```bash
 # 1. Install deps
 npm install
