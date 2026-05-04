@@ -641,10 +641,7 @@ The app is taxonomy-agnostic. To replace IAB with a different taxonomy (products
 
 ### Change the embedding model
 
-Edit [`lib/embedding-client.js:8`](lib/embedding-client.js):
-```js
-const MODEL = 'databricks-gte-large-en';  // → 'bge-large-en' or your own endpoint
-```
+Re-bind the `serving-endpoint` resource in **Apps → Resources** to your chosen endpoint and redeploy — no code change needed. The endpoint name is injected at startup as `EMBEDDING_ENDPOINT_NAME` via `valueFrom: 'serving-endpoint'` in `app.yaml`, and `lib/embedding-client.js` reads it from the env (defaulting to `databricks-gte-large-en` when unset).
 
 Ensure the new endpoint:
 - Accepts `{input: [text]}` request body

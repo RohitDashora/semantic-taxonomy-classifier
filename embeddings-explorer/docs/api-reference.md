@@ -220,7 +220,7 @@ Embed arbitrary text via Foundation Model API. Used by the Load 0 tab for live c
 
 **Behavior:**
 - Text is trimmed and clipped to 2,000 characters
-- Model: `databricks-gte-large-en` (hardcoded in `lib/embedding-client.js`)
+- Model: configurable via `EMBEDDING_ENDPOINT_NAME` env var (default `databricks-gte-large-en`); injected from the `serving-endpoint` resource binding in `app.yaml`
 - Latency: 100-400 ms depending on endpoint warmth
 - Errors pass through as 500 with upstream error text
 

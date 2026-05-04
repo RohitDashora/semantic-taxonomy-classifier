@@ -1,11 +1,13 @@
 /**
  * Databricks Foundation Model API client for text embeddings.
- * Uses databricks-gte-large-en (1024-dim).
+ * Endpoint is selected via the EMBEDDING_ENDPOINT_NAME env var (set by the
+ * 'serving-endpoint' resource binding in app.yaml). Default is
+ * databricks-gte-large-en (1024-dim).
  */
 
 import { getHost, getToken } from './auth.js';
 
-const MODEL = 'databricks-gte-large-en';
+const MODEL = process.env.EMBEDDING_ENDPOINT_NAME || 'databricks-gte-large-en';
 
 export async function embedText(text) {
   const token = await getToken();

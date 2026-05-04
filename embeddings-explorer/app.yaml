@@ -1,5 +1,14 @@
 command: ['node', 'server.js']
 
+# -----------------------------------------------------------------------------
+# Adapting this app for your own taxonomy/data:
+#   * Change CATALOG / SCHEMA below to point at your Unity Catalog location.
+#   * Change the TABLE_* values to match your tables (or accept the defaults
+#     if you used the companion DAB unmodified).
+#   * Change EMBEDDING_ENDPOINT_NAME by re-binding the 'serving-endpoint'
+#     resource in the Databricks Apps UI; no code change needed.
+# -----------------------------------------------------------------------------
+
 env:
   - name: 'NODE_ENV'
     value: 'production'
@@ -11,7 +20,29 @@ env:
   - name: 'SCHEMA'
     value: 'youtube_channels'
 
+  # Pipeline tables. Names below must exist in CATALOG.SCHEMA and match the
+  # role each table plays in the pipeline (taxonomy viz, channel output, etc.).
+  - name: 'TABLE_IAB_VIZ'
+    value: 'iab_viz_precomputed'
+  - name: 'TABLE_DENDROGRAM'
+    value: 'viz_dendrogram_linkage'
+  - name: 'TABLE_CHANNELS_OUTPUT'
+    value: 'channels_output'
+  - name: 'TABLE_CHANNELS_PREPPED'
+    value: 'channels_prepped'
+  - name: 'TABLE_CHANNELS_EMBEDDINGS'
+    value: 'channels_embeddings'
+  - name: 'TABLE_CHANNELS_VIZ'
+    value: 'channels_viz_sample'
+
   # SQL Warehouse resource binding. Create a Databricks App resource of type
   # "sql-warehouse" named 'sql-warehouse' and bind it to your target warehouse.
   - name: 'DATABRICKS_WAREHOUSE_ID'
     valueFrom: 'sql-warehouse'
+
+  # Embedding endpoint resource binding. Create a Databricks App resource of
+  # type "serving-endpoint" named 'serving-endpoint' and bind it to your
+  # chosen embedding endpoint (default: databricks-gte-large-en, 1024-dim).
+  # Re-binding to a different endpoint requires no code change.
+  - name: 'EMBEDDING_ENDPOINT_NAME'
+    valueFrom: 'serving-endpoint'

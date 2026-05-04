@@ -13,6 +13,15 @@ const PORT = process.env.PORT || 8000;
 const CATALOG = process.env.CATALOG || 'main';
 const SCHEMA = process.env.SCHEMA || 'youtube_channels';
 
+// Pipeline table names — overridable via env to retarget the app at a different
+// taxonomy/dataset without code changes.
+const T_IAB_VIZ = process.env.TABLE_IAB_VIZ || 'iab_viz_precomputed';
+const T_DENDROGRAM = process.env.TABLE_DENDROGRAM || 'viz_dendrogram_linkage';
+const T_CHANNELS_OUTPUT = process.env.TABLE_CHANNELS_OUTPUT || 'channels_output';
+const T_CHANNELS_PREPPED = process.env.TABLE_CHANNELS_PREPPED || 'channels_prepped';
+const T_CHANNELS_EMBEDDINGS = process.env.TABLE_CHANNELS_EMBEDDINGS || 'channels_embeddings';
+const T_CHANNELS_VIZ = process.env.TABLE_CHANNELS_VIZ || 'channels_viz_sample';
+
 app.use(compression());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -39,7 +48,7 @@ app.get('/api/iab-data', async (req, res) => {
       SELECT unique_id, name, tier_path, tier_level, tier_1_parent, description,
              embedding, tsne_x, tsne_y, tsne_z, umap_x, umap_y, umap_z,
              cluster_kmeans, cluster_hdbscan
-      FROM ${CATALOG}.${SCHEMA}.iab_viz_precomputed
+      FROM ${CATALOG}.${SCHEMA}.${T_IAB_VIZ}
     `);
 
     const categories = rows.map(r => ({
@@ -71,7 +80,7 @@ app.get('/api/dendrogram', async (req, res) => {
     if (dendrogramCache) return res.json(dendrogramCache);
 
     const rows = await executeSQL(`
-      SELECT linkage_json FROM ${CATALOG}.${SCHEMA}.viz_dendrogram_linkage LIMIT 1
+      SELECT linkage_json FROM ${CATALOG}.${SCHEMA}.${T_DENDROGRAM} LIMIT 1
     `);
 
     if (!rows.length || !rows[0].linkage_json) {
@@ -100,7 +109,7 @@ app.get('/api/channels/search', async (req, res) => {
 
     const rows = await executeSQL(`
       SELECT channel_id, channel_title, primary_category, primary_confidence
-      FROM ${CATALOG}.${SCHEMA}.channels_output
+      FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_OUTPUT}
       WHERE LOWER(channel_title) LIKE LOWER('%${safeQ}%')
       ORDER BY primary_confidence DESC
       LIMIT ${limit}
@@ -131,7 +140,7 @@ app.get('/api/channels/sample', async (req, res) => {
     const rows = await executeSQL(`
       SELECT channel_id, channel_title, primary_category, primary_confidence,
              tsne_x, tsne_y, tsne_z, umap_x, umap_y, umap_z
-      FROM ${CATALOG}.${SCHEMA}.channels_viz_sample
+      FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_VIZ}
     `);
 
     const channels = rows.map(r => ({
@@ -162,15 +171,15 @@ app.get('/api/channels/:id', async (req, res) => {
       executeSQL(`
         SELECT channel_id, channel_title, channel_url, primary_category,
                primary_tier_path, primary_confidence, num_categories
-        FROM ${CATALOG}.${SCHEMA}.channels_output
+        FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_OUTPUT}
         WHERE channel_id = '${channelId}' LIMIT 1
       `),
       executeSQL(`
-        SELECT text_input FROM ${CATALOG}.${SCHEMA}.channels_prepped
+        SELECT text_input FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_PREPPED}
         WHERE channel_id = '${channelId}' LIMIT 1
       `),
       executeSQL(`
-        SELECT embedding FROM ${CATALOG}.${SCHEMA}.channels_embeddings
+        SELECT embedding FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_EMBEDDINGS}
         WHERE channel_id = '${channelId}' LIMIT 1
       `),
     ]);
@@ -254,7 +263,7 @@ app.post('/api/knn/channels', async (req, res) => {
             SQRT(AGGREGATE(TRANSFORM(q.qemb, v -> CAST(v AS DOUBLE) * CAST(v AS DOUBLE)), CAST(0 AS DOUBLE), (acc, x) -> acc + x)) *
             SQRT(AGGREGATE(TRANSFORM(c.embedding, v -> v * v), CAST(0 AS DOUBLE), (acc, x) -> acc + x))
           ) AS similarity
-        FROM ${CATALOG}.${SCHEMA}.channels_viz_sample c
+        FROM ${CATALOG}.${SCHEMA}.${T_CHANNELS_VIZ} c
         CROSS JOIN query q
       )
       SELECT channel_id, channel_title, primary_category, text_input,
@@ -298,7 +307,7 @@ async function warmCaches() {
       SELECT unique_id, name, tier_path, tier_level, tier_1_parent, description,
              embedding, tsne_x, tsne_y, tsne_z, umap_x, umap_y, umap_z,
              cluster_kmeans, cluster_hdbscan
-      FROM ${CATALOG}.${SCHEMA}.iab_viz_precomputed
+      FROM ${CATALOG}.${SCHEMA}.${T_IAB_VIZ}
     `);
     const categories = rows.map(r => ({
       id: r.unique_id,
@@ -328,6 +337,7 @@ app.listen(PORT, () => {
   console.log(`Embeddings Explorer running on port ${PORT}`);
   console.log(`  Catalog:   ${CATALOG}.${SCHEMA}`);
   console.log(`  Warehouse: ${process.env.DATABRICKS_WAREHOUSE_ID || 'not set'}`);
+  console.log(`  Endpoint:  ${process.env.EMBEDDING_ENDPOINT_NAME || '(not set, using default)'}`);
   console.log(`  Host:      ${process.env.DATABRICKS_HOST || 'not set'}`);
   console.log(`  Auth:      ${authMode}`);
   warmCaches();
